@@ -48,6 +48,7 @@ func NewTCPClientHandler(address string, rack int, slot int) *TCPClientHandler {
 	h.setConnectionParameters(address, 0x0100, remoteTSAP)
 	return h
 }
+
 // NewTCPClientHandlerWithConnectType allocates a new TCPClientHandler with connection type.
 func NewTCPClientHandlerWithConnectType(address string, rack int, slot int, connectType int) *TCPClientHandler {
 	h := &TCPClientHandler{}
@@ -59,12 +60,14 @@ func NewTCPClientHandlerWithConnectType(address string, rack int, slot int, conn
 	h.setConnectionParameters(address, 0x0100, remoteTSAP)
 	return h
 }
-//TCPClient creator for a TCP client with address, rack and slot, implement from interface client
+
+// TCPClient creator for a TCP client with address, rack and slot, implement from interface client
 func TCPClient(address string, rack int, slot int) Client {
 	handler := NewTCPClientHandler(address, rack, slot)
 	return NewClient(handler)
 }
-//TCPClientWithConnectType creator for a TCP client with address, rack, slot and connect type, implement from interface client
+
+// TCPClientWithConnectType creator for a TCP client with address, rack, slot and connect type, implement from interface client
 func TCPClientWithConnectType(address string, rack int, slot int, connectType int) Client {
 	handler := NewTCPClientHandlerWithConnectType(address, rack, slot, connectType)
 	return NewClient(handler)
@@ -101,6 +104,37 @@ type tcpTransporter struct {
 	LastPDUType                   byte
 
 	PDULength int
+}
+
+func (mb *tcpTransporter) Ping() error {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+
+	if mb.conn == nil {
+		return fmt.Errorf("connection is nil")
+	}
+
+	// Use S7 Get Status PDU command as a ping
+	request := s7GetStatusTelegram
+
+	// Attempt to send the PDU
+	mb.logf("s7: sending ping % x", request)
+	if _, err := mb.conn.Write(request); err != nil {
+		return fmt.Errorf("ping failed: %w", err)
+	}
+
+	// Wait for the response
+	response := make([]byte, 32) // Buffer size for CPU status response
+	if _, err := io.ReadFull(mb.conn, response); err != nil {
+		return fmt.Errorf("ping response failed: %w", err)
+	}
+
+	// Check if the response is valid
+	if len(response) < 20 || response[17] != 0x00 {
+		return fmt.Errorf("invalid ping response")
+	}
+
+	return nil
 }
 
 func (mb *tcpTransporter) setConnectionParameters(address string, localTSAP uint16, remoteTSAP uint16) {
@@ -322,7 +356,7 @@ func (mb *tcpTransporter) closeIdle() {
 	}
 }
 
-//reserve for future use, need to verify the request and response
+// reserve for future use, need to verify the request and response
 func (mb *tcpPackager) Verify(request []byte, response []byte) (err error) {
 	return
 }
